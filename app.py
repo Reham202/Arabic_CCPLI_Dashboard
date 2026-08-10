@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -62,7 +63,7 @@ st.markdown("""
         font-weight: bold;
     }
 </style>
-""", unsafe_content_policy=True)
+""", unsafe_allow_html=True)
 
 # ==========================================
 # 2. بناء قواعد البيانات وهيكلية الجيل الرابع (v4.0)
@@ -87,13 +88,12 @@ SUB_INDICATORS = {
 
 @st.cache_data
 def load_ccpli_v4_data():
-    """توليد هيكل بيانات معياري محاكي للإصدار الرابع CCPLI v4.0"""
-    languages = ["العربية", "الإنجليزية", "الفرنسية", "الصينية", "الإسبانية"]
+    """توليد هيكل بيانات معياري للإصدار الرابع CCPLI v4.0"""
+    languages = ["العربية", "إنجليزية", "الصينية", "الفرنسية", "الإسبانية"]
     
-    # أوزان الأبعاد العشرة (تساوي 100%)
+    # أوزان الأبعاد العشرة (مجموع الأوزان = 1.00)
     weights = [0.10, 0.15, 0.12, 0.12, 0.08, 0.10, 0.10, 0.08, 0.07, 0.08]
     
-    # درجات افتراضية أساسية
     np.random.seed(42)
     
     dims_data = []
@@ -101,7 +101,7 @@ def load_ccpli_v4_data():
     summary_data = []
     
     base_scores = {
-        "الإنجليزية": 92.5,
+        "إنجليزية": 92.5,
         "العربية": 86.4,
         "الصينية": 82.1,
         "الفرنسية": 78.3,
@@ -114,7 +114,7 @@ def load_ccpli_v4_data():
         
         for d_idx, dim in enumerate(DIMENSIONS):
             # درجة البُعد من 100
-            dim_score = np.clip(base + np.random.normal(0, 5), 40, 100)
+            dim_score = np.clip(base + np.random.normal(0, 4), 40, 100)
             weight = weights[d_idx]
             dim_contrib = dim_score * weight
             total_ccpli += dim_contrib
@@ -127,17 +127,17 @@ def load_ccpli_v4_data():
                 "dim_contribution": round(dim_contrib, 2)
             })
             
-            # المؤشرات الفرعية الخمسة لكل بُعد
-            for s_idx, sub_name in enumerate(SUB_INDICATORS[dim]):
+            # المؤشرات الفرعية الخمسة لكل بُعد (إجمالي 50 مؤشراً لكل لغة)
+            for s_idx in range(5):
                 sub_score = np.clip(dim_score + np.random.normal(0, 3), 30, 100)
                 sub_data.append({
                     "lang_name": lang,
                     "dim_name": dim,
-                    "sub_indicator_name": f"{dim} - مؤشر فرعي {s_idx+1}",
+                    "sub_indicator_name": f"المؤشر الفرعي {s_idx+1}: {dim.split()[-1]}",
                     "sub_score": round(sub_score, 2)
                 })
                 
-        # تحديد الفئة المعيارية بناءً على النتيجة الكلية
+        # التصنيف المعياري بناءً على النتيجة الكلية
         if total_ccpli >= 80:
             tier = "الفئة العالمية المتقدمة (Advanced Global Tier)"
         elif total_ccpli >= 60:
@@ -161,28 +161,28 @@ ccpli_summary, ccpli_dims, ccpli_subs = load_ccpli_v4_data()
 # 3. القائمة الجانبية وعناصر التحكم (Sidebar Controls)
 # ==========================================
 st.sidebar.title("🌐 مرصد CCPLI v4.0")
-st.sidebar.markdown("**الإصدار الرابع من المؤشر الشامل**")
-st.sidebar.caption("نظام قياس قوة ونفوذ اللغات الكونية")
+st.sidebar.markdown("**الإصدار الرابع للمؤشر الشامل**")
+st.sidebar.caption("قياس قوة ونفوذ اللغات في النظام العالمي")
 st.sidebar.divider()
 
 selected_lang = st.sidebar.selectbox(
     "اختر اللغة للتحليل التفصيلي:",
     ccpli_summary['lang_name'].unique(),
-    index=1 # افتراضياً اللغة العربية
+    index=0 # خيار افتراضي: اللغة العربية
 )
 
 st.sidebar.info("""
-**مكونات الإطار النظري (v4.0):**
+**خصائص الإصدار الرابع (v4.0):**
 - **10** أبعاد رئيسية متوازنة.
-- **5** مؤشرات فرعية لكل بُعد (50 مؤشراً).
-- قياس مركب يجمع بين القوة الصلبة والناعمة.
+- **5** مؤشرات فرعية لكل بُعد (50 مؤشراً كلياً).
+- دمج مقاييس القوة الصلبة والقوة الناعمة.
 """)
 
 # ==========================================
 # 4. الواجهة الرئيسية واللوحات البيانية (Main Content)
 # ==========================================
 st.title("🏛️ مرصد المؤشر الشامل لقوة اللغة (CCPLI)")
-st.markdown("لوحة تحكم تفاعلية لاستكشاف وتقييم الأبعاد العشرة والمؤشرات الفرعية للغات.")
+st.markdown("لوحة تحليلية تفاعلية لعرض وتقييم أبعاد ومؤشرات قوة اللغات العالمية.")
 
 # بطاقات ملخص النتيجة للغة المختارة
 lang_summary = ccpli_summary[ccpli_summary['lang_name'] == selected_lang].iloc[0]
@@ -191,10 +191,10 @@ c1, c2, c3 = st.columns(3)
 with c1:
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-title">اللغة المختارة</div>
+        <div class="metric-title">اللغة المستهدفة</div>
         <div class="metric-value">{selected_lang}</div>
     </div>
-    """, unsafe_content_policy=True)
+    """, unsafe_allow_html=True)
 
 with c2:
     st.markdown(f"""
@@ -202,15 +202,15 @@ with c2:
         <div class="metric-title">النتيجة الكلية للمؤشر</div>
         <div class="metric-value">{lang_summary['ccpli_score']} / 100</div>
     </div>
-    """, unsafe_content_policy=True)
+    """, unsafe_allow_html=True)
 
 with c3:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-title">التصنيف المعياري العالمي</div>
-        <div class="metric-value" style="font-size: 1.2rem; color: #1E3A8A;">{lang_summary['tier']}</div>
+        <div class="metric-value" style="font-size: 1.15rem; color: #1E3A8A;">{lang_summary['tier']}</div>
     </div>
-    """, unsafe_content_policy=True)
+    """, unsafe_allow_html=True)
 
 st.divider()
 
@@ -229,7 +229,7 @@ with tab1:
     
     col_g, col_b = st.columns([1, 1.3])
     
-    # 1. Gauge Chart - العداد
+    # 1. Gauge Chart
     with col_g:
         fig_gauge = go.Figure(go.Indicator(
             mode="gauge+number",
@@ -281,14 +281,13 @@ with tab1:
 # التبويب الثاني: تفكيك الأبعاد والمؤشرات الفرعية الخمسة
 # ------------------------------------------
 with tab2:
-    st.subheader(f"🔍 التفاصيل الدقيقة لمكونات الجيل الرابع (5 مؤشرات فرعية لكل بُعد)")
+    st.subheader("🔍 التفاصيل الدقيقة للمؤشرات الفرعية (5 مؤشرات لكل بُعد)")
     
     selected_dim = st.selectbox(
-        "اختر البُعد الرئيسي لاستعراض مؤشراته الفرعية الخمسة:",
+        "اختر البُعد الرئيسي لاستعراض مؤشراته الفرعية:",
         DIMENSIONS
     )
     
-    # تصفية البيانات للبُعد واللغة المححدين
     filtered_subs = ccpli_subs[
         (ccpli_subs['lang_name'] == selected_lang) & 
         (ccpli_subs['dim_name'] == selected_dim)
@@ -316,7 +315,7 @@ with tab2:
         st.plotly_chart(fig_sub, use_container_width=True)
         
     with col_sub_table:
-        st.markdown("##### 📋 جدول القيم والمعايير التفصيلية")
+        st.markdown("##### 📋 جدول الدرجات التفصيلية")
         st.dataframe(
             filtered_subs[['sub_indicator_name', 'sub_score']],
             column_config={
@@ -331,12 +330,12 @@ with tab2:
 # التبويب الثالث: المقارنة الرادارية والمصفوفة الشاملة
 # ------------------------------------------
 with tab3:
-    st.subheader("📈 المقارنة الرادارية المتعددة للأبعاد العشرة")
+    st.subheader("📈 المقارنة الرادارية للأبعاد العشرة بين اللغات")
     
     selected_langs_radar = st.multiselect(
         "اختر اللغات للمقارنة الرادارية:",
         ccpli_summary['lang_name'].unique(),
-        default=["العربية", "إنجليزية", "الصينية"] if "إنجليزية" in ccpli_summary['lang_name'].unique() else ["العربية", "إنجليزية"] if "إنجليزية" in ccpli_summary['lang_name'].unique() else ccpli_summary['lang_name'].unique()[:3]
+        default=["العربية", "إنجليزية", "الصينية"]
     )
     
     if selected_langs_radar:
