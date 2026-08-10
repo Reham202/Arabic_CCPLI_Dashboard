@@ -1,379 +1,806 @@
-import io
-import matplotlib.pyplot as plt
-import numpy as np
+# ============================================================
+# LANGUAGE POWER INDEX V4
+# D1.3 — DIGITAL / COMPUTATIONAL LANGUAGE CAPABILITY
+# MASTER AUDIT ENGINE
+# ============================================================
+
+from dataclasses import dataclass, asdict
+from enum import Enum
+from typing import Optional, List, Dict
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
-import streamlit as st
+import numpy as np
 
-# ---------------------------------------------------------
-# 1. تهيئة الصفحة والإعدادات العامة
-# ---------------------------------------------------------
-st.set_page_config(
-    page_title="مؤشر قوة اللغات المركب (CCPLI v4.0)",
-    page_icon="🌐",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
-# تطبيق تنسيقات CSS لتحسين الواجهة باللغة العربية (RTL)
-st.markdown(
-    """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-    html, body, [class*="css"]  {
-        font-family: 'Cairo', sans-serif;
-        direction: rtl;
-        text-align: right;
-    }
-    .stMetric {
-        background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
-        border-right: 5px solid #1E3A8A;
-    }
-    </style>
-""",
-    unsafe_text_html=True,
-)
+# ============================================================
+# 1. DATA STATUS
+# ============================================================
 
-# ---------------------------------------------------------
-# 2. البيانات الأساسية والهيكل العام (10 أبعاد × 5 مؤشرات)
-# ---------------------------------------------------------
-DIMENSIONS = [
-    "الثقل الديموغرافي",
-    "القوة الاقتصادية",
-    "النفوذ الجيوسياسي",
-    "الإنتاج العلمي",
-    "المحتوى الرقمي",
-    "الجاذبية التعليمية",
-    "الحضور الإعلامي",
-    "الترجمة والتنوع",
-    "رأس المال الثقافي",
-    "المرونة المؤسسية",
-]
+class DataStatus(str, Enum):
+    VERIFIED = "Verified"
+    DERIVED = "Derived"
+    NA_PARTIAL = "NA / Partial Coverage"
+    PENDING = "Pending Audit"
+    REJECTED = "Rejected"
 
-SUB_INDICATORS_DEFAULT = {
-    "الثقل الديموغرافي": [
-        "عدد الناطقين الأصليين",
-        "عدد الناطقين كبلد ثاني",
-        "معدل النمو الديموغرافي",
-        "الانتشار الجغرافي للسكّان",
-        "نسبة الشباب الناطقين",
-    ],
-    "القوة الاقتصادية": [
-        "الناتج المحلي الإجمالي المجمع",
-        "حجم التجارة الدولية باللغة",
-        "الثقل في أسواق العمل",
-        "الابتكار وريادة الأعمال",
-        "معدل الإنفاق السياحي",
-    ],
-    "النفوذ الجيوسياسي": [
-        "الاعتماد في المنظمات الدولية",
-        "عدد الدول ذات الصفة الرسمية",
-        "الاتفاقيات والتحالفات الدولية",
-        "الدبلوماسية الثقافية",
-        "المساعدات والتنمية العابرة للحدود",
-    ],
-    "الإنتاج العلمي": [
-        "عدد الأبحاث المنشورة سنوياً",
-        "الأوراق المؤرشفة في قاعدة بيانات عالمية",
-        "حجم براءات الاختراع",
-        "الاستشهادات العلمية باللغة",
-        "مشاريع البحث والتطوير (R&D)",
-    ],
-    "المحتوى الرقمي": [
-        "نسبة المحتوى على شبكة الإنترنت",
-        "حجم المدونات والبيانات الرقمية",
-        "المعالم اللغوية في أبحاث الذكاء الاصطناعي",
-        "تفاعل منصات التواصل الاجتماعي",
-        "جودة المحتوى البرمجي والأدوات",
-    ],
-    "الجاذبية التعليمية": [
-        "أعداد متعلميها كلفة ثانية/أجنبية",
-        "البرامج الأكاديمية بالجامعات العالمية",
-        "مراكز الاختبارات والشهادات الدولية",
-        "المنح الدراسية المتاحة",
-        "تطوير المناهج وتأهيل المعلمين",
-    ],
-    "الحضور الإعلامي": [
-        "القنوات القائمة والشبكات الدولية",
-        "معدل المشاهدات والاستماع العالمي",
-        "صناعة السينما والدراما",
-        "البودكاست والإنتاج الصوتي",
-        "النشر الصحفي الإلكتروني والمطبوع",
-    ],
-    "الترجمة والتنوع": [
-        "حجم الكتب المترجمة منها وإليها",
-        "المؤتمرات والدوريات المترجمة",
-        "دعم أدوات الترجمة الآلية",
-        "التنوع اللهجي واللغوي المخصب",
-        "المشاريع القومية للترجمة",
-    ],
-    "رأس المال الثقافي": [
-        "المواقع المسجلة في اليونسكو",
-        "الجوائز الأدبية والفكرية العالمية",
-        "المكانة الدينية والتاريخية",
-        "الفعاليات والمعارض الثقافية",
-        "المصنفات الفنية والأدبية الخالدة",
-    ],
-    "المرونة المؤسسية": [
-        "قدرة المجامع اللغوية والتحديث",
-        "السياسات والتشريعات اللغوية",
-        "القدرة الاشتقاقية والمعجمية",
-        "استيعاب المصطلحات الحديثة",
-        "تمويل وتطوير البنية اللغوية",
-    ],
+
+VALID_CALCULATION_STATUS = {
+    DataStatus.VERIFIED,
+    DataStatus.DERIVED
 }
 
-# تهيئة حالة الجلسة (Session State)
-if "sub_indicators_df" not in st.session_state:
-  rows = []
-  for dim in DIMENSIONS:
-    for sub in SUB_INDICATORS_DEFAULT[dim]:
-      rows.append({
-          "البعد الرئيسي": dim,
-          "المؤشر الفرعي": sub,
-          "القيمة (0-100)": 50.0,
-          "الوزن النسبي": 1.0,
-      })
-  st.session_state.sub_indicators_df = pd.DataFrame(rows)
+
+# ============================================================
+# 2. LANGUAGES
+# ============================================================
+
+LANGUAGES = {
+    "ar": "Arabic",
+    "en": "English",
+    "fr": "French",
+    "zh": "Chinese",
+    "de": "German",
+    "es": "Spanish",
+    "ru": "Russian",
+    "hi": "Hindi",
+    "pt": "Portuguese",
+    "bn": "Bengali",
+}
 
 
-# ---------------------------------------------------------
-# 3. دوال التصدير والطباعة
-# ---------------------------------------------------------
-def generate_pdf(summary_df, sub_df):
-  """إنشاء ملف PDF للطباعة يضم النتائج والجداول التفصيلية"""
-  buffer = io.BytesIO()
-  doc = SimpleDocTemplate(
-      buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20
-  )
-  elements = []
+# ============================================================
+# 3. AUDIT RECORD
+# ============================================================
 
-  # تحويل ملخص الأبعاد إلى قائمة لـ PDF
-  summary_data = [["البعد الرئيسي", "نتيجة البعد (0-100)"]] + summary_df[
-      ["البعد الرئيسي", "نتيجة البعد (0-100)"]
-  ].values.tolist()
+@dataclass
+class AuditRecord:
 
-  t_summary = Table(summary_data, colWidths=[300, 150])
-  t_summary.setStyle(
-      TableStyle([
-          ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
-          ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-          ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-          ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-          ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-          ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F3F4F6")),
-          ("GRID", (0, 0), (-1, -1), 1, colors.HexColor("#D1D5DB")),
-      ])
-  )
+    dimension: str
+    indicator: str
+    language: str
 
-  elements.append(t_summary)
-  doc.build(elements)
-  buffer.seek(0)
-  return buffer
+    raw_value: Optional[float] = None
+
+    source: Optional[str] = None
+    version: Optional[str] = None
+    checkpoint: Optional[str] = None
+
+    evidence: Optional[str] = None
+    methodology: Optional[str] = None
+
+    status: DataStatus = DataStatus.PENDING
+
+    derived_value: Optional[float] = None
+    normalized_score: Optional[float] = None
+
+    note: Optional[str] = None
 
 
-# ---------------------------------------------------------
-# 4. الشريط الجانبي والقائمة الرئيسية
-# ---------------------------------------------------------
-st.sidebar.title("📌 القائمة الرئيسية")
-page = st.sidebar.radio(
-    "انتقل إلى:",
-    [
-        "📝 إدخال وتعديل الـ 50 مؤشر",
-        "📊 النتائج والتحليل العنكبوتي",
-        "🖨️ التصدير والطباعة",
-    ],
-)
+# ============================================================
+# 4. AUDIT LOG
+# ============================================================
 
-# ---------------------------------------------------------
-# 5. الصفحة الأولى: إدخال وتعديل الـ 50 مؤشراً
-# ---------------------------------------------------------
-if page == "📝 إدخال وتعديل الـ 50 مؤشر":
-  st.title("📝 إدخال وتعديل أبعاد المؤشر الـ 50")
-  st.write(
-      "يمكنك تعديل أسماء المؤشرات الفرعية، القيم الحالية (من 0 إلى 100)،"
-      " والأوزان النسبية لكل مؤشر."
-  )
+class AuditLog:
 
-  edited_df = st.data_editor(
-      st.session_state.sub_indicators_df,
-      num_rows="fixed",
-      use_container_width=True,
-      height=600,
-      column_config={
-          "البعد الرئيسي": st.column_config.TextColumn(disabled=True),
-          "المؤشر الفرعي": st.column_config.TextColumn(
-              label="اسم المؤشر الفرعي"
-          ),
-          "القيمة (0-100)": st.column_config.NumberColumn(
-              min_value=0.0, max_value=100.0, step=0.5, format="%.2f"
-          ),
-          "الوزن النسبي": st.column_config.NumberColumn(
-              min_value=0.1, max_value=5.0, step=0.1, format="%.1f"
-          ),
-      },
-      key="sub_indicators_editor",
-  )
+    def __init__(self):
+        self.records = []
 
-  st.session_state.sub_indicators_df = edited_df
-  st.success("✅ يتم حفظ وتحديث الحسابات تلقائياً عند تغيير أي قيمة.")
+    def add(
+        self,
+        action: str,
+        dimension: str,
+        indicator: str,
+        language: str,
+        old_value=None,
+        new_value=None,
+        reason=None
+    ):
 
-# ---------------------------------------------------------
-# إجراء الحسابات التلقائية الموحدة
-# ---------------------------------------------------------
-df_calc = st.session_state.sub_indicators_df.copy()
-df_calc["القيمة الموزونة"] = df_calc["القيمة (0-100)"] * df_calc["الوزن النسبي"]
+        self.records.append({
+            "action": action,
+            "dimension": dimension,
+            "indicator": indicator,
+            "language": language,
+            "old_value": old_value,
+            "new_value": new_value,
+            "reason": reason
+        })
 
-summary_df = (
-    df_calc.groupby("البعد الرئيسي", sort=False)
-    .agg({"القيمة الموزونة": "sum", "الوزن النسبي": "sum"})
-    .reset_index()
-)
+    def dataframe(self):
 
-summary_df["نتيجة البعد (0-100)"] = (
-    summary_df["القيمة الموزونة"] / summary_df["الوزن النسبي"]
-)
-overall_score = summary_df["نتيجة البعد (0-100)"].mean()
+        return pd.DataFrame(self.records)
 
-# ---------------------------------------------------------
-# 6. الصفحة الثانية: عرض النتائج والرسم البياني العنكبوتي
-# ---------------------------------------------------------
-if page == "📊 النتائج والتحليل العنكبوتي":
-  st.title("📊 ملخص النتائج والتمثيل العنكبوتي")
 
-  col_score, col_blank = st.columns([1, 2])
-  with col_score:
-    st.metric(
-        label="المؤشر العام المركب لقوة اللغة",
-        value=f"{overall_score:.2f} / 100",
+# ============================================================
+# 5. VALIDATE RAW DATA
+# ============================================================
+
+def validate_record(record: AuditRecord):
+
+    # No source → cannot be verified
+    if record.status == DataStatus.VERIFIED:
+
+        if not record.source:
+            record.status = DataStatus.PENDING
+            record.note = "Verified status rejected: source missing."
+
+        elif not record.version:
+            record.status = DataStatus.PENDING
+            record.note = "Verified status rejected: version missing."
+
+        elif record.raw_value is None:
+            record.status = DataStatus.PENDING
+            record.note = "Verified status rejected: raw value missing."
+
+    # Rejected values can never enter calculations
+    if record.status == DataStatus.REJECTED:
+
+        record.derived_value = None
+        record.normalized_score = None
+
+    return record
+
+
+# ============================================================
+# 6. CHECK WHETHER VALUE CAN ENTER CALCULATION
+# ============================================================
+
+def is_calculable(record: AuditRecord):
+
+    return (
+        record.status in VALID_CALCULATION_STATUS
+        and record.raw_value is not None
     )
 
-  st.markdown("---")
-  col_chart, col_table = st.columns([1.2, 1])
 
-  with col_chart:
-    st.subheader("🕸️ الرسم البياني العنكبوتي (Radar Chart)")
+# ============================================================
+# 7. POSITIVE MIN-MAX NORMALIZATION
+# ============================================================
 
-    # إعداد رسم Plotly التفاعلي للرادار
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatterpolar(
-            r=summary_df["نتيجة البعد (0-100)"].tolist()
-            + [summary_df["نتيجة البعد (0-100)"].iloc[0]],
-            theta=summary_df["البعد الرئيسي"].tolist()
-            + [summary_df["البعد الرئيسي"].iloc[0]],
-            fill="toself",
-            name="مؤشر اللغة",
-            line_color="#1E3A8A",
-            fillcolor="rgba(30, 58, 138, 0.3)",
+def minmax_positive(series: pd.Series):
+
+    series = pd.to_numeric(series, errors="coerce")
+
+    valid = series.dropna()
+
+    if len(valid) == 0:
+        return pd.Series(index=series.index, dtype=float)
+
+    xmin = valid.min()
+    xmax = valid.max()
+
+    # Avoid division by zero
+    if xmax == xmin:
+        return pd.Series(
+            [50.0 if not pd.isna(x) else np.nan for x in series],
+            index=series.index
+        )
+
+    return 100 * (series - xmin) / (xmax - xmin)
+
+
+# ============================================================
+# 8. D1.3.1 — UD RESOURCE COVERAGE
+# ============================================================
+
+def calculate_d131(treebank_df):
+
+    """
+    Required columns:
+
+    Language
+    Treebank
+    Tokens
+    SyntacticWords
+    UDVersion
+    Status
+    Source
+    """
+
+    df = treebank_df.copy()
+
+    # Only verified v2.15 records
+    valid = df[
+        (df["Status"] == DataStatus.VERIFIED.value)
+        & (df["UDVersion"] == "v2.15")
+    ].copy()
+
+    aggregate = (
+        valid
+        .groupby("Language", as_index=False)
+        .agg(
+            Tokens=("Tokens", "sum"),
+            SyntacticWords=("SyntacticWords", "sum")
         )
     )
 
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-        showlegend=False,
-        height=500,
-        margin=dict(l=40, r=40, t=40, b=40),
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    aggregate["D1.3.1_Raw"] = aggregate["SyntacticWords"]
 
-  with col_table:
-    st.subheader("📋 نتائج الأبعاد الرئيسية الـ 10")
-    st.dataframe(
-        summary_df[["البعد الرئيسي", "نتيجة البعد (0-100)"]].style.format(
-            {"نتيجة البعد (0-100)": "{:.2f}"}
-        ),
-        use_container_width=True,
-        height=450,
+    aggregate["D1.3.1_Normalized"] = minmax_positive(
+        aggregate["D1.3.1_Raw"]
     )
 
-# ---------------------------------------------------------
-# 7. الصفحة الثالثة: التصدير والطباعة
-# ---------------------------------------------------------
-if page == "🖨️ التصدير والطباعة":
-  st.title("🖨️ خيارات الطباعة والتصدير")
-  st.write(
-      "تتيح لك هذه الصفحة تحميل البيانات والجداول بصيغ مختلفة تناسب الطباعة"
-      " والتقارير الأكاديمية."
-  )
+    return aggregate
 
-  st.subheader("1️⃣ طباعة سريعة مباشرة للجدول الرئيسي")
 
-  # تحويل ملخص الأبعاد لـ HTML منسق للطباعة المباشرة
-  html_table = summary_df[["البعد الرئيسي", "نتيجة البعد (0-100)"]].to_html(
-      index=False, classes="styled-table"
-  )
-  print_component = f"""
-    <style>
-        .styled-table {{
-            border-collapse: collapse;
-            font-size: 1em;
-            width: 100%;
-            direction: rtl;
-            text-align: right;
-        }}
-        .styled-table th {{
-            background-color: #1E3A8A;
-            color: #ffffff;
-            padding: 10px;
-        }}
-        .styled-table td {{
-            padding: 8px 12px;
-            border: 1px solid #dddddd;
-        }}
-        @media print {{
-            .no-print {{ display: none; }}
-        }}
-    </style>
-    <button class="no-print" onclick="window.print()" style="padding: 10px 20px; font-size: 16px; background-color: #10B981; color: white; border: none; border-radius: 5px; cursor: pointer;">
-        🖨️ فتح نافذة الطباعة (Print)
-    </button>
-    <br><br>
-    {html_table}
+# ============================================================
+# 9. D1.3.2 — NLP FRAMEWORK SUPPORT
+# ============================================================
+
+FRAMEWORKS = [
+    "Stanza",
+    "spaCy",
+    "NLTK",
+    "Flair"
+]
+
+FUNCTIONS = [
+    "Tokenizer",
+    "POS",
+    "Lemmatizer",
+    "Parser",
+    "NER"
+]
+
+
+def calculate_d132(matrix_df):
+
     """
-  st.components.v1.html(print_component, height=400, scrolling=True)
+    Required columns:
 
-  st.markdown("---")
-  st.subheader("2️⃣ تنزيل الملفات القابلة للطباعة والتعديل")
+    Language
+    Framework
+    Function
+    Status
+    Source
+    Version
+    OperationalModel
+    """
 
-  c1, c2, c3 = st.columns(3)
+    df = matrix_df.copy()
 
-  with c1:
-    pdf_file = generate_pdf(summary_df, df_calc)
-    st.download_button(
-        label="📄 تحميل التقرير كـ PDF",
-        data=pdf_file,
-        file_name="Language_Power_Index_Report.pdf",
-        mime="application/pdf",
-        use_container_width=True,
+    # Official evidence AND operational pretrained model
+    df["ValidCell"] = (
+        (df["Status"] == DataStatus.VERIFIED.value)
+        & (df["OperationalModel"] == True)
+        & (df["Source"].notna())
+        & (df["Version"].notna())
     )
 
-  with c2:
-    excel_buffer = io.BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
-      summary_df.to_excel(writer, sheet_name="الأبعاد الرئيسية", index=False)
-      df_calc.to_excel(writer, sheet_name="المؤشرات الـ 50", index=False)
+    df["CellScore"] = df["ValidCell"].astype(int)
 
-    st.download_button(
-        label="📊 تحميل كـ Excel شامل",
-        data=excel_buffer.getvalue(),
-        file_name="Language_Power_Index.xlsx",
-        mime="application/vnd.ms-excel",
-        use_container_width=True,
+    result = (
+        df.groupby("Language", as_index=False)
+        .agg(
+            TotalCells=("CellScore", "count"),
+            VerifiedCells=("CellScore", "sum")
+        )
     )
 
-  with c3:
-    csv_data = df_calc.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        label="📂 تحميل البيانات الـ 50 (CSV)",
-        data=csv_data,
-        file_name="sub_indicators_50.csv",
-        mime="text/csv",
-        use_container_width=True,
+    result["D1.3.2_Raw"] = (
+        result["VerifiedCells"] / 20
     )
+
+    result["D1.3.2_Normalized"] = minmax_positive(
+        result["D1.3.2_Raw"]
+    )
+
+    return result
+
+
+# ============================================================
+# 10. D1.3.3 — TOKENIZATION
+# ============================================================
+
+def calculate_tfr(tokens, words):
+
+    if words is None or words <= 0:
+        return np.nan
+
+    return tokens / words
+
+
+def calculate_btr(bytes_count, tokens):
+
+    if tokens is None or tokens <= 0:
+        return np.nan
+
+    return bytes_count / tokens
+
+
+def calculate_tpi(english_tokens, language_tokens):
+
+    if language_tokens is None or language_tokens <= 0:
+        return np.nan
+
+    return english_tokens / language_tokens
+
+
+def calculate_d133(token_df):
+
+    """
+    Required:
+
+    Language
+    Tokens
+    Words
+    Bytes
+    EnglishTokens
+    """
+
+    df = token_df.copy()
+
+    df["TFR"] = df.apply(
+        lambda r: calculate_tfr(
+            r["Tokens"],
+            r["Words"]
+        ),
+        axis=1
+    )
+
+    df["BTR"] = df.apply(
+        lambda r: calculate_btr(
+            r["Bytes"],
+            r["Tokens"]
+        ),
+        axis=1
+    )
+
+    df["TPI"] = df.apply(
+        lambda r: calculate_tpi(
+            r["EnglishTokens"],
+            r["Tokens"]
+        ),
+        axis=1
+    )
+
+    # Positive orientation:
+    # Higher BTR / TPI = better efficiency
+    #
+    # TFR is reversed because lower fragmentation is better.
+
+    df["TFR_Score"] = 100 - minmax_positive(df["TFR"])
+
+    df["BTR_Score"] = minmax_positive(df["BTR"])
+
+    df["TPI_Score"] = minmax_positive(df["TPI"])
+
+    df["D1.3.3_Raw"] = (
+        df["TFR_Score"]
+        + df["BTR_Score"]
+        + df["TPI_Score"]
+    ) / 3
+
+    return df
+
+
+# ============================================================
+# 11. D1.3.4 — MACHINE TRANSLATION
+# ============================================================
+
+def calculate_d134(mt_df):
+
+    """
+    Required:
+
+    Language
+    Checkpoint
+    Direction
+    Split
+    Metric
+    Score
+    Status
+    """
+
+    df = mt_df.copy()
+
+    # Strict metadata validation
+    df["MetadataValid"] = (
+        df["Checkpoint"].notna()
+        & df["Direction"].notna()
+        & df["Split"].eq("FLORES-200 devtest")
+        & df["Metric"].isin(["spBLEU", "chrF++"])
+        & df["Score"].notna()
+        & df["Status"].eq(DataStatus.VERIFIED.value)
+    )
+
+    valid = df[df["MetadataValid"]].copy()
+
+    if valid.empty:
+        return pd.DataFrame(
+            columns=[
+                "Language",
+                "D1.3.4_Raw",
+                "D1.3.4_Normalized"
+            ]
+        )
+
+    # Equal metric weighting
+    result = (
+        valid
+        .groupby("Language", as_index=False)
+        .agg(
+            D1_3_4_Raw=("Score", "mean")
+        )
+    )
+
+    result["D1.3.4_Normalized"] = minmax_positive(
+        result["D1_3_4_Raw"]
+    )
+
+    return result
+
+
+# ============================================================
+# 12. D1.3.5 — NLU
+# ============================================================
+
+def calculate_nlu_score(
+    belebele,
+    xnli,
+    xnli_available=True
+):
+
+    if belebele is None:
+        return np.nan
+
+    # Full coverage
+    if xnli_available and xnli is not None:
+
+        return (
+            0.50 * belebele
+            + 0.50 * xnli
+        )
+
+    # Partial coverage
+    return belebele
+
+
+def calculate_d135(nlu_df):
+
+    """
+    Required:
+
+    Language
+    BelebeleAccuracy
+    XNLIAccuracy
+    XNLIAvailable
+    """
+
+    df = nlu_df.copy()
+
+    df["NLU_Raw"] = df.apply(
+        lambda r: calculate_nlu_score(
+            r["BelebeleAccuracy"],
+            r["XNLIAccuracy"],
+            r["XNLIAvailable"]
+        ),
+        axis=1
+    )
+
+    df["D1.3.5_Normalized"] = minmax_positive(
+        df["NLU_Raw"]
+    )
+
+    return df
+
+
+# ============================================================
+# 13. SPEARMAN RANK STABILITY
+# ============================================================
+
+def rank_stability(
+    baseline: pd.Series,
+    sensitivity: pd.Series
+):
+
+    combined = pd.concat(
+        [baseline, sensitivity],
+        axis=1
+    ).dropna()
+
+    if len(combined) < 2:
+        return np.nan
+
+    return combined.iloc[:, 0].corr(
+        combined.iloc[:, 1],
+        method="spearman"
+    )
+
+
+# ============================================================
+# 14. RANK DIFFERENCE
+# ============================================================
+
+def rank_difference(
+    baseline: pd.Series,
+    sensitivity: pd.Series
+):
+
+    base_rank = baseline.rank(
+        ascending=False,
+        method="min"
+    )
+
+    sens_rank = sensitivity.rank(
+        ascending=False,
+        method="min"
+    )
+
+    return (base_rank - sens_rank).abs()
+
+
+# ============================================================
+# 15. SENSITIVITY ANALYSIS
+# ============================================================
+
+def nlu_sensitivity(
+    belebele,
+    xnli
+):
+
+    baseline = (
+        0.50 * belebele
+        + 0.50 * xnli
+    )
+
+    reading_bias = (
+        0.70 * belebele
+        + 0.30 * xnli
+    )
+
+    inference_bias = (
+        0.30 * belebele
+        + 0.70 * xnli
+    )
+
+    return {
+        "Baseline_50_50": baseline,
+        "S1a_70_30": reading_bias,
+        "S1b_30_70": inference_bias
+    }
+
+
+# ============================================================
+# 16. FINAL D1.3 COMPOSITE
+# ============================================================
+
+def calculate_d13_composite(df):
+
+    components = [
+        "D1.3.1",
+        "D1.3.2",
+        "D1.3.3",
+        "D1.3.4",
+        "D1.3.5"
+    ]
+
+    available = [
+        c for c in components
+        if c in df.columns
+    ]
+
+    if not available:
+        raise ValueError(
+            "No valid D1.3 components available."
+        )
+
+    # Equal weighting ONLY if this is the frozen Codebook rule.
+    # Otherwise replace with the official weights.
+
+    df["D1.3_Raw"] = df[available].mean(
+        axis=1,
+        skipna=True
+    )
+
+    df["D1.3_Coverage"] = (
+        df[available].notna().sum(axis=1)
+        / len(available)
+    )
+
+    return df
+
+
+# ============================================================
+# 17. MASTER AUDIT VALIDATION
+# ============================================================
+
+def audit_master_sheet(df):
+
+    report = []
+
+    for _, row in df.iterrows():
+
+        status = row.get("Status")
+
+        if status == DataStatus.PENDING.value:
+
+            report.append({
+                "Language": row.get("Language"),
+                "Problem": "Pending Audit",
+                "Action": "Exclude from derived calculations"
+            })
+
+        elif status == DataStatus.REJECTED.value:
+
+            report.append({
+                "Language": row.get("Language"),
+                "Problem": "Rejected value",
+                "Action": "Exclude permanently"
+            })
+
+        elif row.get("RawValue") is None:
+
+            report.append({
+                "Language": row.get("Language"),
+                "Problem": "Missing raw value",
+                "Action": "Do not impute"
+            })
+
+    return pd.DataFrame(report)
+
+
+# ============================================================
+# 18. EXPORT
+# ============================================================
+
+def export_master_audit(
+    master_df,
+    audit_log,
+    filename="D1.3_Master_Audit.xlsx"
+):
+
+    with pd.ExcelWriter(
+        filename,
+        engine="openpyxl"
+    ) as writer:
+
+        master_df.to_excel(
+            writer,
+            sheet_name="Master Extraction",
+            index=False
+        )
+
+        audit_log.dataframe().to_excel(
+            writer,
+            sheet_name="Audit Log",
+            index=False
+        )
+
+    print(
+        f"Master Audit exported to: {filename}"
+    )
+
+
+# ============================================================
+# 19. MAIN PIPELINE
+# ============================================================
+
+def run_d13_pipeline(
+    d131_df,
+    d132_df,
+    d133_df,
+    d134_df,
+    d135_df
+):
+
+    print("=" * 60)
+    print("LANGUAGE POWER INDEX V4")
+    print("D1.3 MASTER AUDIT PIPELINE")
+    print("=" * 60)
+
+    # -----------------------------------------
+    # D1.3.1
+    # -----------------------------------------
+
+    d131 = calculate_d131(d131_df)
+
+    # -----------------------------------------
+    # D1.3.2
+    # -----------------------------------------
+
+    d132 = calculate_d132(d132_df)
+
+    # -----------------------------------------
+    # D1.3.3
+    # -----------------------------------------
+
+    d133 = calculate_d133(d133_df)
+
+    # -----------------------------------------
+    # D1.3.4
+    # -----------------------------------------
+
+    d134 = calculate_d134(d134_df)
+
+    # -----------------------------------------
+    # D1.3.5
+    # -----------------------------------------
+
+    d135 = calculate_d135(d135_df)
+
+    # -----------------------------------------
+    # Merge
+    # -----------------------------------------
+
+    final = pd.DataFrame({
+        "Language": list(LANGUAGES.keys())
+    })
+
+    datasets = [
+        d131,
+        d132,
+        d133,
+        d134,
+        d135
+    ]
+
+    for dataset in datasets:
+
+        if "Language" not in dataset.columns:
+            continue
+
+        final = final.merge(
+            dataset,
+            on="Language",
+            how="left"
+        )
+
+    # -----------------------------------------
+    # Rename final component scores
+    # -----------------------------------------
+
+    rename_map = {}
+
+    for col in final.columns:
+
+        if col.endswith("_Normalized"):
+
+            base = col.replace(
+                "_Normalized",
+                ""
+            )
+
+            rename_map[col] = base
+
+    final = final.rename(
+        columns=rename_map
+    )
+
+    # -----------------------------------------
+    # Final D1.3
+    # -----------------------------------------
+
+    component_cols = [
+        "D1.3.1",
+        "D1.3.2",
+        "D1.3.3",
+        "D1.3.4",
+        "D1.3.5"
+    ]
+
+    available = [
+        c for c in component_cols
+        if c in final.columns
+    ]
+
+    final["D1.3_Coverage"] = (
+        final[available]
+        .notna()
+        .sum(axis=1)
+        / len(available)
+    )
+
+    final["D1.3_Final"] = (
+        final[available]
+        .mean(
+            axis=1,
+            skipna=True
+        )
+    )
+
+    return final
+
+
+# ============================================================
+# END
+# ============================================================
